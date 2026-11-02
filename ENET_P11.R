@@ -1,159 +1,155 @@
-
-# Load libraries. 
-# These contain functions such as 'goric' that will be used in this R code. 
-# Each time you re-open this R file you have to execute this step.
-#
-# Install the packages (once) 
-# If you want to use restriktor from github:
-#if (!require("devtools")) install.packages("devtools")
-#library(devtools) 
-#install_github("LeonardV/restriktor")
-#library(restriktor) # for goric function
-# If from CRAN:
-if (!require("restriktor")) install.packages("restriktor")
-#
-# Load 
-library(restriktor) # for goric function
-
+################################################################################
+# SCED tutorial - GORICA evaluation of trajectory hypotheses for participant P11
+# Multivariate regression (two outcomes: PCL-5 and CLL) fitted with lm()
 ################################################################################
 
 
-# Notably, it is only possible to load the data if you are using the correct 
-# working directory (with both your R script and data file). 
-# The command `getwd()` shows you your current working directory.
+## 0. Packages ----------------------------------------------------------------
+# Install once (uncomment if needed):
+# install.packages("restriktor")
+library(restriktor)  # goric(), benchmark()
+packageVersion("restriktor")  # report this version in the paper
+
+# The data file is read relative to the working directory: 
+# put this script in a folder with a subfolder 'data' containing 'ENET11.dat' (check with getwd()).
+
+
+## 1. Data preparation ---------------------------------------------------------
+data_ENET_P11 <- read.table("data/ENET11.dat", header = TRUE)  # first line = variable names
+head(data_ENET_P11)
+
+# Missing values are coded -999
+data_ENET_P11[data_ENET_P11 == -999] <- NA
+
+# 'event' is a 0/1 indicator (0 = no critical incident, 1 = one or more).
+# Kept numeric: for a 0/1 variable this gives the same model as factor().
+
+# Time: measured in days since the first intervention session.
+# (a) Optional: Express it in weeks. In days, sqTime runs up to ~16,000 and its
+#     coefficients are ~1e-4, which makes the covariance matrix nearly singular.
+#     Rescaling changes no weights, only the units of the coefficients.
+# (b) Centre it at one-third of the intervention phase. 
+#     Btw Centring does NOT determine where the maximum/minimum of the parabola lies; 
+#     it only makes beta_1 the slope at that time point (beta_2 is unaffected).
 #
-# You can change the working directory to the one you prefer using the function 
-# `setwd()` by specifying the correct location between parentheses. 
-# Alternatively, in Rstudio, you can use the "Session" tab (on top) or you can 
-# use the "Files"-pane (on top of probably the right lower box of Rstudio, this 
-# pane is located next to the panes for "Plots", "Packages", "Help", and "Viewer").
+# (a):
+#data_ENET_P11$Time   <- data_ENET_P11$Time / 7
+# (b):
+data_ENET_P11$Time   <- data_ENET_P11$Time - quantile(data_ENET_P11$Time, 1/3)
+data_ENET_P11$sqTime <- data_ENET_P11$Time^2
 
 
-### Analysis E-NET per person ### 
-
-## Data preparation ##
-
-# Read/Load the Data # 
-# If you open the data file in a text editor, 
-# you can see that the variable labels have been inserted in the first line of the file, which is called a header. 
-# Therefore, you have to specify 'header = TRUE' when loading the data:
-data_ENET_P11 <- read.table("data/ENET11.dat", header=TRUE)
-data_ENET_P11
-
-# Missings #
-# Declare -999 as missing
-data_ENET_P11$event[data_ENET_P11$event == -999] <- NA 
-data_ENET_P11
-
-# Make the variable 'event' a factor #
-#
-# Since a .txt file was loaded, R does not know the measurement levels of the 
-# variables and assumes all of them to be continuous, meaning that there
-# measurement level is interval or ratio. 
-# Hence, especially when there are more than two groups, 
-# one has to tell R that the variable `event` is a factor by using the 
-# `factor()` function on the `event` variable (i.e., a grouping / categorical / 
-# nominal variable):
-#
-data_ENET_P11$event <- factor(data_ENET_P11$event) 
-data_ENET_P11
-# this command tells R that it is a factor 
-# and not a continuous variable like PCL5 and CLL
-
-# Make the time variables #
-#
-# Center time such that at 1/3th the value is 0, 
-# then the maximum/minimum will take place there:
-percentile <- 1/3
-data_ENET_P11$Time <- data_ENET_P11$Time - quantile(data_ENET_P11$Time, percentile) 
-# If you want the variable time to have a 0 value, then you could use:
-#data_ENET_P11$Time <- data_ENET_P11$Time - data_ENET_P11$Time[round(length(data_ENET_P11$Time)*percentile)]
-#
-# Make the quadratic term of time:
-data_ENET_P11$sqTime <- data_ENET_P11$Time^2 # quadratic term
-
-
-# Fit the (unconstrained) MANOVA model #
+## 2. Fit the unconstrained model (Step 1) --------------------------------------
+# Multivariate multiple regression: 
+# two outcomes, and for each the same three predictors.
 lm_fit_P11 <- lm(cbind(PCL5, CLL) ~ Time + sqTime + event, data = data_ENET_P11)
+#nobs(lm_fit_P11)  # number of observations used (rows with NA are dropped)
 #
-# You should not look at the results before specifying your hypotheses.
-# If you, at some point, do want to inspect the results, then use:
-#lm_fit_P11
-#summary(lm_fit_P11)
+# lm_fit_P11
+# summary(lm_fit_P11)
+# Do not inspect the estimates before the hypotheses are specified.
 
-
-# Extract parameter estimates of interest and their covariance matrix #
-#
-# The goric function can take some fit objects and it can use the unconstrained
-# parameter estimates of interest and their covariance matrix.
-# We will use the latter.
-#
-# parameter estimates with self-assigned labels:
-est <- c(coef(lm_fit_P11))
-names(est) <- c(paste0("beta_PCL5_", 0:3), paste0("beta_CLL_", 0:3)) 
-# Specify restrictions in hypotheses using those names/labels.
-# 0 is then intercept, 
-# 1 linear relationship with Time, 
-# 2 linear relationship with sqTime, thus the quadratic relationship with Time, 
-# 3 the relationship with event.
-#
-# the covariance matrix of the parameter estimates from above
+# When creating this file, goric() cannot yet take a multivariate lm object, 
+# so pass the estimates and their covariance matrix. 
+# Label them by name, not by position:
+est <- coef(lm_fit_P11)  # 4 x 2 matrix: rows = predictors, columns = outcomes
+est <- setNames(c(est), c(paste0("beta_PCL5_", 0:3), paste0("beta_CLL_", 0:3)))
+# 0 = intercept, 1 = Time (linear), 2 = sqTime (quadratic), 3 = event
 VCOV <- vcov(lm_fit_P11)
-#
-# Again, you should not look at the results before specifying your hypotheses.
+#stopifnot(identical(length(est), nrow(VCOV)))
+#dimnames(VCOV) <- list(names(est), names(est))
 
 
-## Hypotheses specification ##
-#
-# These are known before inspecting the results.
-# We have to use the labels/names of the estimates.
-# Restrictions in a hypothesis can be separated by a ',', ';' or '&',
-# here, we will use the ',' to separate restrictions for one outcome
-# and '&' to separate the restrictions for the two outcomes.
-#
-# No trend
-H_NoTrend <- 'beta_PCL5_1 = 0, beta_PCL5_2 = 0 & beta_CLL_1 = 0, beta_CLL_2 = 0'
-# beta_PCL5_1 = 0 & beta_CLL_1 = 0 -> no linear effect of Time
-# beta_PCL5_2 = 0 & beta_CLL_2 = 0 -> no quadratic effect of Time
-#
-# For PCL5 linear downward trend and for CLL a linear upward trend
-H_Linear <- 'beta_PCL5_1 < 0, beta_PCL5_2 = 0 & beta_CLL_1 > 0; beta_CLL_2 = 0'
-# beta_PCL5_1 < 0 & beta_CLL_1 > 0 -> negative/positive linear effect of Time
-# beta_PCL5_2 = 0 & beta_CLL_2 = 0 -> no quadratic effect of Time
-#
-# For PCL5 a hyperbolic trend and for CLL a linear upward trend
-H_Hyperbolic <- 'beta_PCL5_2 < 0  & beta_CLL_1 > 0; beta_CLL_2 = 0'
-# beta_PCL5_2 < 0 (and beta_PCL5_1 free) -> 
-#                       negative quadratic (hyperbolic) trend for PCL5: 
-#                       first an increase in symptoms and afterwards a decrease
-# beta_CLL_2 = 0 -> no quadratic effect of Time
-# beta_CLL_1 > 0 -> linear effect of Time and a positive one
-#
-# Unconstrained as failsafe, this will be included by default when there is
-# more than one informative hypothesis (like here).
+## 3. Hypotheses (Step 2) -------------------------------------------------------
+# Restrictions are separated by ';', ',', and/or '&'.
+# Here, '&' is used to separate the restrictions per outcome,
+#       ';' is used to separate the restrictions within one outcome.
+
+H_NoTrend <- "beta_PCL5_1 = 0; beta_PCL5_2 = 0 &
+              beta_CLL_1  = 0; beta_CLL_2  = 0"
+# no linear and no quadratic effect of Time on either outcome
+
+H_Linear <- "beta_PCL5_1 < 0; beta_PCL5_2 = 0 &
+             beta_CLL_1  > 0; beta_CLL_2  = 0"
+# PCL-5 decreases linearly, CLL increases linearly
+
+H_Parabolic <- "beta_PCL5_2 < 0 &
+                 beta_CLL_1 > 0; beta_CLL_2 = 0"
+# PCL-5: inverted-U (negative quadratic effect); beta_PCL5_1 is unrestricted.
+#        NB: this also covers a parabola whose peak lies outside the observed period,
+#        i.e. a PCL-5 trend that only rises or only falls, 
+#        and (on the boundary beta_PCL5_2 = 0) a purely linear rise. 
+#        See H_RiseFall for a stricter version.
+# CLL: linear increase.
+
+# Optional, stricter version of 'first deterioration, then improvement':
+# the PCL-5 slope at time t is beta_PCL5_1 + 2*t*beta_PCL5_2, 
+# so require it to be positive at the start and 
+# negative at the end of the intervention phase.
+t_start <- min(data_ENET_P11$Time)
+t_end   <- max(data_ENET_P11$Time)
+H_RiseFall <- sprintf("beta_PCL5_1 + %.3f*beta_PCL5_2 > 0;
+                       beta_PCL5_1 + %.3f*beta_PCL5_2 < 0;
+                       beta_CLL_1 > 0; beta_CLL_2 = 0", 2 * t_start, 2 * t_end)
+
+# The unconstrained hypothesis is added by default as fail-safe.
 
 
-## GORICA evaluation ##
-#
-# Calculate GORIC values and weights
-#
-#In the calculation of the GORIC, an iterative process is needed to calculate 
-#the penalty / complexity part. Therefore, one needs to set a seed value:
-#1. Then, you will obtain the same penalty value every time you run this code.
-#2. Then, you can change the seed value to check the sensitivity of the penalty 
-#   value.
-#   If it is sensitive, then increase number of iterations used in calculation 
-#   of the penalty.
-#
-set.seed(123) # Set seed value
-output_P11 <- goric(est, VCOV = VCOV, 
-                   hypotheses = list(H_NoTrend = H_NoTrend, 
-                                     H_Linear = H_Linear, 
-                                     H_Hyperbolic = H_Hyperbolic))
+## 4. GORICA evaluation (Step 3) -------------------------------------------------
+# The penalty is computed by simulation, so set a seed for reproducibility;
+# re-run with another seed to check that the penalties are stable
+# (if not, increase the number of simulation iterations; see ?goric).
+set.seed(123)
+output_P11 <- goric(est, VCOV = VCOV,
+                   hypotheses = list(H_NoTrend    = H_NoTrend,
+                                     H_Linear     = H_Linear,
+                                     H_Parabolic = H_Parabolic))
 output_P11
-#summary(output_P11)
-#output_P11$ratio.gw # matrix with ratios of GORICA weights
+# summary(output_P11)   # more detail
+# output_P11$ratio.gw   # matrix with ratios of GORICA weights
+
+# Always check what the preferred hypothesis looks like: 
+# the order-restricted estimates show whether the restrictions are active 
+# (estimate on the boundary).
+round(coef(output_P11)[, c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")], 4)
+# E.g., if H_Parabolic is preferred but has beta_PCL5_2 = 0 (boundary),
+# it does not describe deterioration followed by improvement.
+
+# Sensitivity check with the stricter rise-then-fall hypothesis:
+# set.seed(123)
+# output_P11_rf <- goric(est, VCOV = VCOV,
+#                       hypotheses = list(H_NoTrend    = H_NoTrend,
+#                                         H_Linear     = H_Linear,
+#                                         H_Parabolic  = H_Parabolic,
+#                                         H_RiseFall   = H_RiseFall))
+# output_P11_rf
+#
+# Because H_RiseFall is probably an alternative specification of H_Parabolic,
+# use the set with only H_RiseFall (not both):
+set.seed(123)
+output_P11_rf <- goric(est, VCOV = VCOV,
+                      hypotheses = list(H_NoTrend    = H_NoTrend,
+                                        H_Linear     = H_Linear,
+                                        H_RiseFall   = H_RiseFall))
+output_P11_rf
 
 
-################################################################################
+## 5. Extra: benchmarks -----------------------------------------------------------
+# How (un)usual is the observed support for the preferred hypothesis under
+# hypothetical populations? Parameters are set by name, not by position.
+slopes   <- c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")
+est_no   <- replace(est, slopes, 0)                         # no trend
+est_lin  <- replace(est, c("beta_PCL5_2", "beta_CLL_2"), 0) # linear trend only
+my_pop_est <- rbind(NoTrend  = est_no,
+                    Linear   = est_lin,
+                    Observed = est)
 
+set.seed(123)
+benchmarks_P11 <- benchmark(output_P11, pop_est = my_pop_est,
+                           iter = 100)  # 100 to save time; use >= 1000 for reporting
+benchmarks_P11
+plot(benchmarks_P11, log_scale = TRUE)
+
+
+## 6.
+sessionInfo()  # record R and package versions

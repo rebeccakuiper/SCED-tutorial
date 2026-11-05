@@ -19,7 +19,9 @@
 
 fit_car1_biv <- function(formula, data, outcomes = c("PCL5", "CLL"),
                          time = "Time", time_unit = 7,
-                         phi_bounds = c(1e-4, 0.99)) {
+                         phi_bounds = c(1e-4, 0.99),
+                         method = c("REML", "ML")) {
+  method <- match.arg(method)
 
   # Complete cases on outcomes, predictors and time (as lm() does)
   vars <- unique(c(outcomes, all.vars(formula), time))
@@ -43,7 +45,7 @@ fit_car1_biv <- function(formula, data, outcomes = c("PCL5", "CLL"),
     list(V = kronecker(Sig, R), Sig = Sig, phi = phi)
   }
 
-  # Restricted (REML) log-likelihood, with beta profiled out
+  # Restricted (REML) or ordinary (ML) log-likelihood, with beta profiled out
   reml <- function(par) {
     m <- make_V(par)
     cV <- tryCatch(chol(m$V), error = function(e) NULL)
@@ -57,6 +59,7 @@ fit_car1_biv <- function(formula, data, outcomes = c("PCL5", "CLL"),
     r  <- y - Xs %*% b
     rVir <- sum(r * backsolve(cV, forwardsolve(t(cV), r)))
     N <- length(y); k <- ncol(Xs)
+    if (method == "ML") return(-0.5 * (N * log(2 * pi) + 2 * sum(log(diag(cV))) + rVir))
     -0.5 * ((N - k) * log(2 * pi) + 2 * sum(log(diag(cV))) +
               2 * sum(log(diag(cA))) + rVir)
   }
@@ -83,10 +86,10 @@ fit_car1_biv <- function(formula, data, outcomes = c("PCL5", "CLL"),
   nm <- c(outer(colnames(X), outcomes, function(a, o) paste0(o, ":", a)))
   names(b) <- nm; dimnames(vcov_b) <- list(nm, nm)
 
-  list(coef = b, vcov = vcov_b, phi = m$phi, Sigma = m$Sig,
+  list(coef = b, vcov = vcov_b, phi = m$phi, Sigma = m$Sig, method = method,
        rho = stats::cov2cor(m$Sig)[1, 2],
-       logLik_REML = -opt$value, logLik_REML_noAR = -opt0$value,
-       # REML likelihoods are comparable here (same fixed effects);
+       logLik = -opt$value, logLik_noAR = -opt0$value,
+       # (REML) likelihoods are comparable here (same fixed effects);
        # phi = 0 lies on the boundary, so the LR test is conservative.
        LR_AR = 2 * (opt0$value - opt$value),
        phi_at_bound = abs(opt$par[4] - up[4]) < 1e-6 || abs(opt$par[4] - lo[4]) < 1e-6,

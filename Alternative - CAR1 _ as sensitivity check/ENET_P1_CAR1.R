@@ -10,14 +10,14 @@
 
 ## 0. Packages and helper function ----------------------------------------------
 library(restriktor)            # goric()
-source("ENET_CAR1_sensitivity/CAR1_functions.R")     # fit_car1_biv(); same folder as this script
+source("CAR1_functions.R")     # fit_car1_biv(); same folder as this script
 
 
 ## 1. Data preparation (identical to ENET_P1.R) -----------------------------------
 data_ENET_P1 <- read.table("data/ENET01.dat", header = TRUE)
 data_ENET_P1[data_ENET_P1 == -999] <- NA
 #
-data_ENET_P1$Time   <- data_ENET_P1$Time - quantile(data_ENET_P1$Time, 1/3)
+data_ENET_P1$Time   <- data_ENET_P1$Time - quantile(data_ENET_P1$Time, 1/3, na.rm = TRUE)
 data_ENET_P1$sqTime <- data_ENET_P1$Time^2
 
 
@@ -41,19 +41,19 @@ dimnames(VCOV) <- list(names(est), names(est))
 
 
 ## 3. Hypotheses (Step 2; identical to ENET_P1.R) ---------------------------------
-H_NoTrend <- "beta_PCL5_1 = 0; beta_PCL5_2 = 0 &
-              beta_CLL_1  = 0; beta_CLL_2  = 0"
-H_Linear <- "beta_PCL5_1 < 0; beta_PCL5_2 = 0 &
-             beta_CLL_1  > 0; beta_CLL_2  = 0"
+H_NoTrend <- "beta_PCL5_1 = 0, beta_PCL5_2 = 0 &
+              beta_CLL_1  = 0, beta_CLL_2  = 0"
+H_Linear <- "beta_PCL5_1 < 0, beta_PCL5_2 = 0 &
+             beta_CLL_1  > 0, beta_CLL_2  = 0"
 H_Parabolic <- "beta_PCL5_2 < 0 &
-                beta_CLL_1 > 0; beta_CLL_2 = 0"
+                beta_CLL_1 > 0, beta_CLL_2 = 0"
 #
 # Start and end of the intervention phase (all sessions, as in ENET_P1.R)
-t_start <- min(data_ENET_P1$Time)
-t_end   <- max(data_ENET_P1$Time)
-H_RiseFall <- sprintf("beta_PCL5_1 + %.3f*beta_PCL5_2 > 0;
-                       beta_PCL5_1 + %.3f*beta_PCL5_2 < 0;
-                       beta_CLL_1 > 0; beta_CLL_2 = 0", 2 * t_start, 2 * t_end)
+t_start <- min(data_ENET_P1$Time, na.rm = TRUE)
+t_end   <- max(data_ENET_P1$Time, na.rm = TRUE)
+H_RiseFall <- sprintf("beta_PCL5_1 + %.3f*beta_PCL5_2 > 0,
+                       beta_PCL5_1 + %.3f*beta_PCL5_2 < 0 &
+                       beta_CLL_1 > 0, beta_CLL_2 = 0", 2 * t_start, 2 * t_end)
 
 
 ## 4. GORICA evaluation (Step 3) ---------------------------------------------------
@@ -63,7 +63,40 @@ output_P1_CAR1 <- goric(est, VCOV = VCOV,
                                           H_Linear    = H_Linear,
                                           H_Parabolic = H_Parabolic))
 output_P1_CAR1
-round(coef(output_P1_CAR1)[, c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")], 4)
+
+# Always check the log-likelihood (loglik) values and/or the loglik weights
+# of the preferred hypothesis (see 'Guidelines output GORIC.html' and
+# 'Decision tree - Interpretation.pdf' on https://github.com/rebeccakuiper/Tutorials):
+# - The unconstrained hypothesis always has the highest loglik.
+# - If the preferred hypothesis has (about) the same loglik (weight) as the
+#   unconstrained one, its restrictions are in line with the data.
+# - If its loglik (weight) is (clearly) lower, it is preferred (partly) because
+#   it is less complex. Since the unconstrained (fail-safe) hypothesis is
+#   always included in the set, the issue is then that we may not have enough
+#   power to detect that the restrictions do not hold, that is, to prefer the
+#   fail-safe hypothesis.
+#   Inspect this further with the order-restricted estimates (or-mle's): they
+#   show which restrictions are active, i.e., which estimates are on the
+#   boundary.
+#
+# 1. loglik values and loglik weights:
+output_P1_CAR1$result[, c("model", "loglik", "loglik.weights")]
+# 2. or-mle's per hypothesis (last row: the unconstrained estimates):
+slopes <- c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")
+signif(as.matrix(coef(output_P1_CAR1))[, slopes], 3)
+#
+# Here (P1): H_Parabolic is preferred, but its loglik (weight) is lower than
+# that of the unconstrained hypothesis (loglik 19.743 vs. 20.094; loglik weights 0.385 vs. 0.547).
+# So H_Parabolic may be preferred mainly because it is less complex, and we
+# may not have enough power to detect that its restrictions do not hold (that
+# is, to prefer the fail-safe unconstrained hypothesis). The or-mle's show
+# that the restriction beta_PCL5_2 < 0 is active: under H_Parabolic,
+# beta_PCL5_2 = 0 (on the boundary; the unconstrained estimate, 0.000489, is positive, i.e., a U-shape),
+# with beta_PCL5_1 = 0.0612 > 0. Hence, the best-fitting trajectory within
+# H_Parabolic is a linear INCREASE in PCL-5, not a deterioration followed by
+# improvement: H_Parabolic is preferred because it is the only hypothesis
+# that allows PCL-5 to increase, not because the data show an inverted U.
+# The stricter H_RiseFall (below) evaluates a rise followed by a fall.
 
 # Alternative set with the stricter rise-then-fall hypothesis
 set.seed(123)

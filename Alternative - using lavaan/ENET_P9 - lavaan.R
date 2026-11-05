@@ -26,7 +26,7 @@ data_ENET_P9$Time   <- data_ENET_P9$Time / 7
 # (b) Centre it at one-third of the intervention phase. 
 #     Btw Centring does NOT determine where the maximum/minimum of the parabola lies; 
 #     it only makes beta_1 the slope at that time point (beta_2 is unaffected).
-data_ENET_P9$Time   <- data_ENET_P9$Time - quantile(data_ENET_P9$Time, 1/3)
+data_ENET_P9$Time   <- data_ENET_P9$Time - quantile(data_ENET_P9$Time, 1/3, na.rm = TRUE)
 data_ENET_P9$sqTime <- data_ENET_P9$Time^2
 
 
@@ -42,15 +42,16 @@ fit_P9 <- sem(model, data = data_ENET_P9, meanstructure = TRUE)
 
 
 ## 3. Hypotheses (Step 2) -------------------------------------------------------
-H_NoTrend    <- "beta_PCL5_1 = 0; beta_PCL5_2 = 0; beta_CLL_1 = 0; beta_CLL_2 = 0"
-H_Linear     <- "beta_PCL5_1 < 0; beta_PCL5_2 = 0; beta_CLL_1 > 0; beta_CLL_2 = 0"
-H_Parabolic  <- "beta_PCL5_2 < 0; beta_CLL_1 > 0; beta_CLL_2 = 0"
+# (',' separates restrictions within one outcome, '&' those of the two outcomes)
+H_NoTrend    <- "beta_PCL5_1 = 0, beta_PCL5_2 = 0 & beta_CLL_1 = 0, beta_CLL_2 = 0"
+H_Linear     <- "beta_PCL5_1 < 0, beta_PCL5_2 = 0 & beta_CLL_1 > 0, beta_CLL_2 = 0"
+H_Parabolic  <- "beta_PCL5_2 < 0 & beta_CLL_1 > 0, beta_CLL_2 = 0"
 # Optional:
-t_start <- min(data_ENET_P9$Time)
-t_end   <- max(data_ENET_P9$Time)
-H_RiseFall <- sprintf("beta_PCL5_1 + %.3f*beta_PCL5_2 > 0;
-                       beta_PCL5_1 + %.3f*beta_PCL5_2 < 0;
-                       beta_CLL_1 > 0; beta_CLL_2 = 0", 2 * t_start, 2 * t_end)
+t_start <- min(data_ENET_P9$Time, na.rm = TRUE)
+t_end   <- max(data_ENET_P9$Time, na.rm = TRUE)
+H_RiseFall <- sprintf("beta_PCL5_1 + %.3f*beta_PCL5_2 > 0,
+                       beta_PCL5_1 + %.3f*beta_PCL5_2 < 0 &
+                       beta_CLL_1 > 0, beta_CLL_2 = 0", 2 * t_start, 2 * t_end)
 
 
 ## 4. GORICA evaluation (Step 3) -------------------------------------------------
@@ -70,7 +71,36 @@ output_P9 <- goric(est, VCOV = VCOV,
                                      H_Linear     = H_Linear,
                                      H_Parabolic  = H_Parabolic))
 output_P9
-#round(coef(output_P9)[, c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")], 4)
+
+# Always check the log-likelihood (loglik) values and/or the loglik weights
+# of the preferred hypothesis (see 'Guidelines output GORIC.html' and
+# 'Decision tree - Interpretation.pdf' on https://github.com/rebeccakuiper/Tutorials):
+# - The unconstrained hypothesis always has the highest loglik.
+# - If the preferred hypothesis has (about) the same loglik (weight) as the
+#   unconstrained one, its restrictions are in line with the data.
+# - If its loglik (weight) is (clearly) lower, it is preferred (partly) because
+#   it is less complex. Since the unconstrained (fail-safe) hypothesis is
+#   always included in the set, the issue is then that we may not have enough
+#   power to detect that the restrictions do not hold, that is, to prefer the
+#   fail-safe hypothesis.
+#   Inspect this further with the order-restricted estimates (or-mle's): they
+#   show which restrictions are active, i.e., which estimates are on the
+#   boundary.
+#
+# 1. loglik values and loglik weights:
+output_P9$result[, c("model", "loglik", "loglik.weights")]
+# 2. or-mle's per hypothesis (last row: the unconstrained estimates):
+slopes <- c("beta_PCL5_1", "beta_PCL5_2", "beta_CLL_1", "beta_CLL_2")
+signif(as.matrix(coef(output_P9))[, slopes], 3)
+#
+# Here (P9): H_Linear is preferred. Its loglik (weight) is lower than that of
+# the unconstrained hypothesis (loglik 11.789 vs. 12.137; loglik weights 0.280 vs. 0.397).
+# The or-mle's show that its inequality restrictions are not active
+# (beta_PCL5_1 = -0.176, beta_CLL_1 = 0.0158; not on the boundary), so the expected
+# directions are in line with the data. The loss in fit comes from the
+# equality restriction(s) (no quadratic effects for PCL-5 and CLL), which set those
+# estimates to zero.
+# Since this loss is small, H_Linear describes the data well.
 
 #Optional / Alternative:
 set.seed(123)

@@ -55,7 +55,7 @@ for (p in P_names) {
 
 
 ## Preferred hypothesis per person ---------------------------------------------------
-# Preferred: has lowest GORICA value (i.e., highest GORICA weight).
+# Preferred = lowest GORICA value (= highest GORICA weight).
 # An informative hypothesis is 'weak' if it is not supported more than the
 # unconstrained hypothesis.
 overview <- do.call(rbind, lapply(P_names, function(p) {
@@ -71,8 +71,8 @@ overview
 
 
 ## Save -------------------------------------------------------------------------------
-# Tab-separated text with a decimal comma 
-# (opens in Excel; Excel may warn that the format does not match the .xls extension).
+# Tab-separated text with a decimal comma (opens in Excel; Excel may warn
+# that the format does not match the .xls extension).
 write.table(mydata, "Results.xls", row.names = FALSE, sep = "\t", dec = ",")
 
 # Same, with ratios above 1000 shown as '>1000' (as in Table 4 of the paper)
